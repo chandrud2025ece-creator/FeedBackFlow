@@ -1,0 +1,110 @@
+### 1. Create Course
+POST http://localhost:8080/api/courses
+Content-Type: application/json
+
+{
+  "courseCode": "CS101",
+  "courseName": "Database Management Systems",
+  "facultyName": "Dr. Kumar"
+}
+
+### 2. Get All Courses
+GET http://localhost:8080/api/courses
+
+### 3. Get Course By ID
+GET http://localhost:8080/api/courses/1
+
+### 4. Create Feedback Form for Course 1
+POST http://localhost:8080/api/courses/1/forms
+Content-Type: application/json
+
+{
+  "semester": "2026-27",
+  "closingDate": "2026-10-30",
+  "questions": [
+    {
+      "questionText": "The teaching was clear and understandable"
+    },
+    {
+      "questionText": "The course content was relevant and useful"
+    },
+    {
+      "questionText": "The study materials were helpful"
+    }
+  ]
+}
+
+### 5. Student Submit Feedback (Student STU001)
+POST http://localhost:8080/api/forms/1/responses
+Content-Type: application/json
+
+{
+  "studentId": "STU001",
+  "ratings": [
+    {
+      "questionId": 1,
+      "rating": 5
+    },
+    {
+      "questionId": 2,
+      "rating": 4
+    },
+    {
+      "questionId": 3,
+      "rating": 5
+    }
+  ]
+}
+
+### 6. Student Submit Duplicate Feedback (Should return 409 Conflict)
+POST http://localhost:8080/api/forms/1/responses
+Content-Type: application/json
+
+{
+  "studentId": "STU001",
+  "ratings": [
+    {
+      "questionId": 1,
+      "rating": 5
+    },
+    {
+      "questionId": 2,
+      "rating": 4
+    },
+    {
+      "questionId": 3,
+      "rating": 5
+    }
+  ]
+}
+
+### 7. Get Form Analytics
+GET http://localhost:8080/api/forms/1/analytics
+
+### 8. Get Faculty Summary
+GET http://localhost:8080/api/faculty/Dr. Kumar/summary
+
+### 9. Manually Close Feedback Collection
+PUT http://localhost:8080/api/forms/1/close
+
+### 10. Try Submitting After Form Is Closed (Should return 400 Bad Request)
+POST http://localhost:8080/api/forms/1/responses
+Content-Type: application/json
+
+{
+  "studentId": "STU002",
+  "ratings": [
+    {
+      "questionId": 1,
+      "rating": 4
+    },
+    {
+      "questionId": 2,
+      "rating": 4
+    },
+    {
+      "questionId": 3,
+      "rating": 4
+    }
+  ]
+}
