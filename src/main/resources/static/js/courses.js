@@ -19,7 +19,7 @@ async function loadCoursesPage() {
                 <td>${escapeHtml(course.facultyName)}</td>
                 <td>
                     <button type="button" class="btn btn-secondary btn-sm" onclick="openEditCourseModal(${course.id}, '${escapeJsString(course.courseCode)}', '${escapeJsString(course.courseName)}', '${escapeJsString(course.facultyName)}')">Edit</button>
-                    <button type="button" class="btn btn-danger btn-sm" onclick="deleteCourseAction(${course.id}, '${escapeJsString(course.courseCode)}')">Delete</button>
+                    <button type="button" class="btn btn-danger btn-sm" onclick="deleteCourseAction(${course.id}, '${escapeJsString(course.courseCode)}', this)">Delete</button>
                 </td>
             </tr>
         `).join('');
@@ -135,17 +135,26 @@ async function handleEditCourseSubmit(event) {
     }
 }
 
-async function deleteCourseAction(id, code) {
-    if (!confirm(`Are you sure you want to delete course "${code}"? This action cannot be undone.`)) {
+async function deleteCourseAction(id, code, btnElement) {
+    if (!confirm("Are you sure you want to delete this course?")) {
         return;
+    }
+
+    if (btnElement) {
+        btnElement.disabled = true;
+        btnElement.textContent = 'Deleting...';
     }
 
     try {
         await Api.deleteCourse(id);
-        showToast(`Course "${code}" deleted successfully.`, 'success');
+        showToast(`Course "${code}" deleted successfully!`, 'success');
         loadCoursesPage();
     } catch (err) {
-        showToast(err.message, 'error');
+        showToast(err.message || 'Could not delete course.', 'error');
+        if (btnElement) {
+            btnElement.disabled = false;
+            btnElement.textContent = 'Delete';
+        }
     }
 }
 
