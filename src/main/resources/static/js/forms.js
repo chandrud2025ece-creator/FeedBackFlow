@@ -1,4 +1,6 @@
 let questionCounter = 0;
+let allPublishedFormsData = [];
+let currentPublishedFormsFilter = 'ALL';
 
 async function initFormsPage() {
     loadCoursesForFormSelect();
@@ -22,55 +24,92 @@ async function loadCoursesForFormSelect() {
 }
 
 async function loadAllFeedbackForms() {
-    const tableBody = document.getElementById('publishedFormsTableBody');
-    if (!tableBody) return;
+    const container = document.getElementById('publishedFormsListContainer');
+    if (!container) return;
 
-    tableBody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Loading forms...</td></tr>';
+    container.innerHTML = '<p style="color: var(--text-muted); text-align: center; padding: 2rem 0;">Loading published forms...</p>';
 
     try {
-        const forms = await Api.getFeedbackForms();
-        if (!forms || forms.length === 0) {
-            tableBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--text-muted);">No feedback forms published yet.</td></tr>';
-            return;
+        allPublishedFormsData = await Api.getFeedbackForms();
+        renderPublishedFormsList();
+    } catch (err) {
+        container.innerHTML = `<p style="color: var(--danger); text-align: center; padding: 1.5rem 0;">${escapeHtml(err.message)}</p>`;
+    }
+}
+
+function filterPublishedFormsList(filterValue) {
+    currentPublishedFormsFilter = filterValue;
+    renderPublishedFormsList();
+}
+
+function renderPublishedFormsList() {
+    const container = document.getElementById('publishedFormsListContainer');
+    if (!container) return;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const filtered = (allPublishedFormsData || []).filter(form => {
+        const isClosed = Boolean(form.closed);
+        const isPastDeadline = form.closingDate && form.closingDate < todayStr;
+        let status = 'OPEN';
+        if (isClosed) status = 'CLOSED';
+        else if (isPastDeadline) status = 'EXPIRED';
+
+        if (currentPublishedFormsFilter === 'ALL') return true;
+        return status === currentPublishedFormsFilter;
+    });
+
+    if (filtered.length === 0) {
+        container.innerHTML = `<p style="color: var(--text-muted); text-align: center; padding: 2rem 0;">
+            ${allPublishedFormsData.length === 0 ? 'No feedback forms published yet.' : 'No forms match the selected filter.'}
+        </p>`;
+        return;
+    }
+
+    container.innerHTML = filtered.map(form => {
+        const isClosed = Boolean(form.closed);
+        const isPastDeadline = form.closingDate && form.closingDate < todayStr;
+
+        let statusText = 'OPEN';
+        let badgeClass = 'badge-open';
+
+        if (isClosed) {
+            statusText = 'CLOSED';
+            badgeClass = 'badge-closed';
+        } else if (isPastDeadline) {
+            statusText = 'EXPIRED';
+            badgeClass = 'badge-warning';
         }
 
-        const todayStr = new Date().toISOString().split('T')[0];
+        const courseCode = form.course ? form.course.courseCode : '';
+        const courseName = form.course ? form.course.courseName : '';
+        const facultyName = form.course ? form.course.facultyName : '';
 
-        tableBody.innerHTML = forms.map(form => {
-            let statusText = 'OPEN';
-            let badgeClass = 'badge-success';
+        const closeBtn = (statusText === 'OPEN') 
+            ? `<button type="button" class="btn btn-danger btn-sm" onclick="closeFormAction(${form.id})">Close Feedback</button>`
+            : `<span style="font-size: 0.8rem; color: var(--text-muted);">${statusText}</span>`;
 
-            const isPastDeadline = form.closingDate && form.closingDate < todayStr;
-            if (form.closed) {
-                statusText = 'CLOSED';
-                badgeClass = 'badge-closed';
-            } else if (isPastDeadline) {
-                statusText = 'EXPIRED';
-                badgeClass = 'badge-warning';
-            }
-
-            const courseCode = form.course ? form.course.courseCode : '';
-            const courseName = form.course ? form.course.courseName : '';
-            const facultyName = form.course ? form.course.facultyName : '';
-
-            const actionBtn = (statusText === 'OPEN') 
-                ? `<button type="button" class="btn btn-danger btn-sm" onclick="closeFormAction(${form.id})">Close Feedback</button>`
-                : `<span style="color: var(--text-muted); font-size: 0.8rem;">${statusText}</span>`;
-
-            return `
-                <tr>
-                    <td><strong>#${escapeHtml(form.id)}</strong></td>
-                    <td>${escapeHtml(courseCode)} - ${escapeHtml(courseName)}</td>
-                    <td>${escapeHtml(form.semester)}</td>
-                    <td>${escapeHtml(form.closingDate)}</td>
-                    <td><span class="badge ${badgeClass}">${statusText}</span></td>
-                    <td>${actionBtn}</td>
-                </tr>
-            `;
-        }).join('');
-    } catch (err) {
-        tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center; color: var(--danger);">${escapeHtml(err.message)}</td></tr>`;
-    }
+        return `
+            <div style="background-color: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem 1.25rem; margin-bottom: 0.75rem; transition: var(--transition);">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.5rem;">
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--primary); font-weight: 700; text-transform: uppercase;">Form #${escapeHtml(form.id)}</div>
+                        <h4 style="font-size: 1rem; font-weight: 700; color: var(--navy); margin: 0.1rem 0;">${escapeHtml(courseCode)}: ${escapeHtml(courseName)}</h4>
+                    </div>
+                    <span class="badge ${badgeClass}">${statusText}</span>
+                </div>
+                <div style="font-size: 0.825rem; color: var(--text-muted); margin-bottom: 0.75rem; display: flex; flex-wrap: wrap; gap: 1rem;">
+                    <span>Faculty: <strong style="color: var(--navy);">${escapeHtml(facultyName)}</strong></span>
+                    <span>Semester: <strong style="color: var(--navy);">${escapeHtml(form.semester)}</strong></span>
+                    <span>Deadline: <strong style="color: var(--navy);">${escapeHtml(form.closingDate)}</strong></span>
+                    <span>Questions: <strong style="color: var(--navy);">${(form.questions || []).length}</strong></span>
+                </div>
+                <div style="display: flex; justify-content: flex-end; border-top: 1px solid var(--border-light); padding-top: 0.5rem;">
+                    ${closeBtn}
+                </div>
+            </div>
+        `;
+    }).join('');
 }
 
 function resetFormCreationCard() {
@@ -98,9 +137,10 @@ function addQuestionInput(defaultText = '') {
     div.style.display = 'flex';
     div.style.gap = '0.5rem';
     div.style.alignItems = 'center';
+    div.style.marginBottom = '0.5rem';
 
     div.innerHTML = `
-        <input type="text" class="question-text-field" placeholder="Question ${questionCounter} text" value="${escapeHtml(defaultText)}" required />
+        <input type="text" class="question-text-field" placeholder="Question ${questionCounter} text" value="${escapeHtml(defaultText)}" required style="flex: 1;" />
         <button type="button" class="btn btn-secondary btn-sm remove-question-btn" onclick="this.parentElement.remove()" title="Remove Question">&times;</button>
     `;
 
@@ -166,33 +206,35 @@ function renderCreatedFormResult(form) {
     const isClosed = form.closed;
     const statusBadge = isClosed 
         ? '<span class="badge badge-closed">CLOSED</span>' 
-        : '<span class="badge badge-success">OPEN</span>';
+        : '<span class="badge badge-open">OPEN</span>';
 
     const closeBtnHtml = !isClosed ? `
         <button type="button" class="btn btn-danger btn-sm" onclick="closeFormAction(${form.id})">Close Feedback Collection</button>
     ` : '<span style="color: var(--text-muted); font-size: 0.85rem;">Form is permanently closed.</span>';
 
     const questionsListHtml = (form.questions || []).map(q => `
-        <li>${escapeHtml(q.questionText)}</li>
+        <li style="margin-bottom: 0.25rem;">${escapeHtml(q.questionText)}</li>
     `).join('');
 
     resultCard.innerHTML = `
-        <div class="card-title">
-            <span>Feedback Form Published (Form ID: #${form.id})</span>
-            ${statusBadge}
-        </div>
-        <p><strong>Course:</strong> ${escapeHtml(form.course ? form.course.courseCode : '')} - ${escapeHtml(form.course ? form.course.courseName : '')}</p>
-        <p><strong>Semester:</strong> ${escapeHtml(form.semester)}</p>
-        <p><strong>Closing Date:</strong> ${escapeHtml(form.closingDate)}</p>
-        <div style="margin-top: 1rem;">
-            <strong>Rating Questions (${(form.questions || []).length}):</strong>
-            <ol style="margin-left: 1.25rem; margin-top: 0.5rem; color: var(--text-main);">
-                ${questionsListHtml}
-            </ol>
-        </div>
-        <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 0.85rem; color: var(--text-muted);">Form ID: #${form.id}</span>
-            ${closeBtnHtml}
+        <div style="background-color: var(--primary-light); border: 1px solid var(--primary); border-radius: var(--radius-md); padding: 1.25rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                <span style="font-weight: 700; color: var(--navy); font-size: 1rem;">Published Form ID: #${form.id}</span>
+                ${statusBadge}
+            </div>
+            <p style="margin-bottom: 0.25rem; font-size: 0.9rem;"><strong>Course:</strong> ${escapeHtml(form.course ? form.course.courseCode : '')} - ${escapeHtml(form.course ? form.course.courseName : '')}</p>
+            <p style="margin-bottom: 0.25rem; font-size: 0.9rem;"><strong>Semester:</strong> ${escapeHtml(form.semester)}</p>
+            <p style="margin-bottom: 0.5rem; font-size: 0.9rem;"><strong>Closing Date:</strong> ${escapeHtml(form.closingDate)}</p>
+            <div style="margin-top: 0.75rem;">
+                <strong style="font-size: 0.85rem; color: var(--navy);">Questions (${(form.questions || []).length}):</strong>
+                <ol style="margin-left: 1.25rem; margin-top: 0.35rem; color: var(--text-main); font-size: 0.875rem;">
+                    ${questionsListHtml}
+                </ol>
+            </div>
+            <div style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 0.85rem; color: var(--text-muted);">Form ID: #${form.id}</span>
+                ${closeBtnHtml}
+            </div>
         </div>
     `;
 
@@ -208,7 +250,9 @@ async function closeFormAction(formId) {
     try {
         const updatedForm = await Api.closeFeedbackForm(formId);
         showToast("Feedback collection closed successfully.", "success");
-        renderCreatedFormResult(updatedForm);
+        if (document.getElementById('createdFormResultCard').style.display !== 'none') {
+            renderCreatedFormResult(updatedForm);
+        }
         loadAllFeedbackForms();
     } catch (err) {
         showToast(err.message, "error");
@@ -226,4 +270,3 @@ document.addEventListener('DOMContentLoaded', () => {
         form.addEventListener('submit', handleCreateFormSubmit);
     }
 });
-

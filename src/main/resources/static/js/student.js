@@ -1,33 +1,58 @@
 let currentFormForStudent = null;
+let activeFormsForStudentList = [];
 
 async function initStudentPage() {
+    updateStudentStepProgress(1);
     loadAvailableFormsForStudent();
 }
 
+function updateStudentStepProgress(stepNum) {
+    const step1 = document.getElementById('stepIndicator1');
+    const step2 = document.getElementById('stepIndicator2');
+    const step3 = document.getElementById('stepIndicator3');
+
+    if (!step1 || !step2 || !step3) return;
+
+    step1.classList.remove('active', 'completed');
+    step2.classList.remove('active', 'completed');
+    step3.classList.remove('active', 'completed');
+
+    if (stepNum === 1) {
+        step1.classList.add('active');
+    } else if (stepNum === 2) {
+        step1.classList.add('completed');
+        step2.classList.add('active');
+    } else if (stepNum === 3) {
+        step1.classList.add('completed');
+        step2.classList.add('completed');
+        step3.classList.add('active');
+    }
+}
+
 async function loadAvailableFormsForStudent() {
-    const select = document.getElementById('studentAvailableFormsSelect');
+    const listContainer = document.getElementById('studentAvailableFormsList');
     const alertBox = document.getElementById('studentAlertBox');
     const formCard = document.getElementById('studentFormCard');
-    if (!select) return;
+    if (!listContainer) return;
 
-    select.innerHTML = '<option value="">-- Loading available feedback forms... --</option>';
+    listContainer.innerHTML = '<p style="color: var(--text-muted); text-align: center; padding: 1.5rem 0;">Loading available forms...</p>';
 
     try {
         const allForms = await Api.getFeedbackForms();
         const todayStr = new Date().toISOString().split('T')[0];
 
-        const activeForms = (allForms || []).filter(form => {
+        activeFormsForStudentList = (allForms || []).filter(form => {
             const isClosed = Boolean(form.closed);
             const isPastDeadline = form.closingDate && form.closingDate < todayStr;
             return !isClosed && !isPastDeadline;
         });
 
-        if (activeForms.length === 0) {
-            select.innerHTML = '<option value="">-- No Active Feedback Forms Available --</option>';
+        if (activeFormsForStudentList.length === 0) {
+            listContainer.innerHTML = '<p style="color: var(--text-muted); text-align: center; padding: 1.5rem 0;">No active feedback forms are currently available for submission.</p>';
             if (formCard) formCard.style.display = 'none';
             if (alertBox) {
-                alertBox.className = 'alert alert-danger';
-                alertBox.textContent = 'No active feedback forms are currently available for student submission.';
+                alertBox.className = 'alert alert-warning';
+                alertBox.textContent = 'No active feedback forms are currently open.';
                 alertBox.style.display = 'block';
             }
             return;
@@ -35,32 +60,65 @@ async function loadAvailableFormsForStudent() {
 
         if (alertBox) alertBox.style.display = 'none';
 
-        select.innerHTML = '<option value="">-- Select Active Feedback Form --</option>';
-        activeForms.forEach(form => {
-            const courseCode = form.course ? form.course.courseCode : '';
-            const courseName = form.course ? form.course.courseName : '';
-            select.innerHTML += `<option value="${form.id}">Form #${form.id} - ${escapeHtml(courseCode)}: ${escapeHtml(courseName)} (Semester: ${escapeHtml(form.semester)})</option>`;
-        });
+        renderAvailableFormsCards();
 
-        // Automatically select first active form if available
-        if (activeForms.length > 0) {
-            select.value = activeForms[0].id;
-            onStudentAvailableFormSelected(activeForms[0].id);
+        // Auto select first form
+        if (activeFormsForStudentList.length > 0) {
+            selectStudentFormCard(activeFormsForStudentList[0].id);
         }
     } catch (err) {
-        select.innerHTML = '<option value="">-- Could not load forms --</option>';
+        listContainer.innerHTML = `<p style="color: var(--danger); text-align: center; padding: 1.5rem 0;">${escapeHtml(err.message)}</p>`;
         showToast("Error loading feedback forms: " + err.message, "error");
     }
 }
 
-function onStudentAvailableFormSelected(formId) {
+function renderAvailableFormsCards() {
+    const listContainer = document.getElementById('studentAvailableFormsList');
+    if (!listContainer) return;
+
+    listContainer.innerHTML = activeFormsForStudentList.map(form => {
+        const courseCode = form.course ? form.course.courseCode : '';
+        const courseName = form.course ? form.course.courseName : '';
+        const facultyName = form.course ? form.course.facultyName : '';
+
+        return `
+            <div class="student-form-selection-card" id="studentFormCardItem_${form.id}" onclick="selectStudentFormCard(${form.id})" style="border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.85rem 1rem; margin-bottom: 0.65rem; cursor: pointer; transition: var(--transition);">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <strong style="color: var(--navy); font-size: 0.95rem;">${escapeHtml(courseCode)}: ${escapeHtml(courseName)}</strong>
+                    <span class="badge badge-open">Form #${form.id}</span>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.35rem; display: flex; justify-content: space-between;">
+                    <span>Faculty: ${escapeHtml(facultyName)}</span>
+                    <span>Deadline: ${escapeHtml(form.closingDate)}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function selectStudentFormCard(formId) {
+    // Highlight selected card UI
+    document.querySelectorAll('.student-form-selection-card').forEach(card => {
+        card.style.borderColor = 'var(--border)';
+        card.style.backgroundColor = 'var(--bg-card)';
+    });
+
+    const selectedCard = document.getElementById(`studentFormCardItem_${formId}`);
+    if (selectedCard) {
+        selectedCard.style.borderColor = 'var(--primary)';
+        selectedCard.style.backgroundColor = 'var(--primary-light)';
+    }
+
     const formIdInput = document.getElementById('studentFormIdInput');
     if (formIdInput) {
         formIdInput.value = formId || '';
     }
+
     if (formId) {
+        updateStudentStepProgress(2);
         fetchAndRenderFormForStudent(formId);
     } else {
+        updateStudentStepProgress(1);
         const formCard = document.getElementById('studentFormCard');
         if (formCard) formCard.style.display = 'none';
     }
@@ -69,7 +127,6 @@ function onStudentAvailableFormSelected(formId) {
 async function handleStudentFormLookup() {
     const formIdInput = document.getElementById('studentFormIdInput').value.trim();
     const alertBox = document.getElementById('studentAlertBox');
-    const formCard = document.getElementById('studentFormCard');
     if (alertBox) alertBox.style.display = 'none';
 
     if (!formIdInput) {
@@ -77,7 +134,7 @@ async function handleStudentFormLookup() {
         return;
     }
 
-    fetchAndRenderFormForStudent(formIdInput);
+    selectStudentFormCard(formIdInput);
 }
 
 async function fetchAndRenderFormForStudent(formId) {
@@ -106,8 +163,19 @@ function renderStudentFormUI(form) {
 
     const courseCode = form.course ? form.course.courseCode : '';
     const courseName = form.course ? form.course.courseName : '';
-    document.getElementById('studentCourseCode').textContent = `${courseCode} - ${courseName}`;
-    document.getElementById('studentSemester').textContent = form.semester;
+    const facultyName = form.course ? form.course.facultyName : '';
+
+    const courseHeaderElem = document.getElementById('studentCourseCode');
+    if (courseHeaderElem) courseHeaderElem.textContent = `${courseCode} - ${courseName}`;
+
+    const facultyElem = document.getElementById('studentFacultyName');
+    if (facultyElem) facultyElem.textContent = facultyName || 'Faculty';
+
+    const semesterElem = document.getElementById('studentSemester');
+    if (semesterElem) semesterElem.textContent = form.semester || '-';
+
+    const deadlineElem = document.getElementById('studentDeadline');
+    if (deadlineElem) deadlineElem.textContent = form.closingDate || '-';
 
     const todayStr = new Date().toISOString().split('T')[0];
     const isPastDeadline = form.closingDate && form.closingDate < todayStr;
@@ -123,7 +191,7 @@ function renderStudentFormUI(form) {
             statusBadge.className = isPastDeadline ? 'badge badge-warning' : 'badge badge-closed';
         } else {
             statusBadge.textContent = 'OPEN';
-            statusBadge.className = 'badge badge-success';
+            statusBadge.className = 'badge badge-open';
         }
     }
 
@@ -153,16 +221,24 @@ function renderStudentFormUI(form) {
 
         const qBlock = document.createElement('div');
         qBlock.className = 'question-block';
+        qBlock.style.backgroundColor = '#F8FAFC';
+        qBlock.style.border = '1px solid var(--border)';
+        qBlock.style.borderRadius = 'var(--radius-md)';
+        qBlock.style.padding = '1rem 1.25rem';
+        qBlock.style.marginBottom = '1rem';
+
         qBlock.innerHTML = `
-            <div class="question-title">${idx + 1}. ${escapeHtml(qText)}</div>
-            <div class="rating-options" data-question-id="${qId}">
+            <div class="question-title" style="font-size: 0.95rem; font-weight: 700; color: var(--navy); margin-bottom: 0.75rem;">
+                ${idx + 1}. ${escapeHtml(qText)}
+            </div>
+            <div class="rating-options" data-question-id="${qId}" style="display: flex; gap: 0.5rem; justify-content: space-between; margin-bottom: 0.5rem;">
                 <div class="rating-btn ${isClosed ? 'disabled' : ''}" onclick="${isClosed ? '' : `selectRating(this, ${qId}, 1)`}">1</div>
                 <div class="rating-btn ${isClosed ? 'disabled' : ''}" onclick="${isClosed ? '' : `selectRating(this, ${qId}, 2)`}">2</div>
                 <div class="rating-btn ${isClosed ? 'disabled' : ''}" onclick="${isClosed ? '' : `selectRating(this, ${qId}, 3)`}">3</div>
                 <div class="rating-btn ${isClosed ? 'disabled' : ''}" onclick="${isClosed ? '' : `selectRating(this, ${qId}, 4)`}">4</div>
                 <div class="rating-btn ${isClosed ? 'disabled' : ''}" onclick="${isClosed ? '' : `selectRating(this, ${qId}, 5)`}">5</div>
             </div>
-            <div class="rating-labels">
+            <div class="rating-labels" style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted);">
                 <span>1 = Poor</span>
                 <span>5 = Excellent</span>
             </div>
@@ -240,6 +316,8 @@ async function handleStudentFeedbackSubmit(event) {
             studentId: studentId,
             ratings: ratingsPayload
         });
+
+        updateStudentStepProgress(3);
 
         if (alertBox) {
             alertBox.className = 'alert alert-success';

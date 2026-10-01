@@ -1,32 +1,92 @@
+let allCoursesData = [];
+let courseSearchQuery = '';
+let currentCoursePage = 1;
+const COURSES_PER_PAGE = 5;
+
 async function loadCoursesPage() {
     const tableBody = document.getElementById('coursesTableBody');
     if (!tableBody) return;
 
-    tableBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Loading courses...</td></tr>';
+    tableBody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 2rem 0;">Loading courses...</td></tr>';
 
     try {
-        const courses = await Api.getCourses();
-        if (!courses || courses.length === 0) {
-            tableBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color: var(--text-muted);">No courses found. Click "+ Create Course" to add one.</td></tr>';
-            return;
-        }
-
-        tableBody.innerHTML = courses.map(course => `
-            <tr>
-                <td>${escapeHtml(course.id)}</td>
-                <td><strong>${escapeHtml(course.courseCode)}</strong></td>
-                <td>${escapeHtml(course.courseName)}</td>
-                <td>${escapeHtml(course.facultyName)}</td>
-                <td>
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="openEditCourseModal(${course.id}, '${escapeJsString(course.courseCode)}', '${escapeJsString(course.courseName)}', '${escapeJsString(course.facultyName)}')">Edit</button>
-                    <button type="button" class="btn btn-danger btn-sm" onclick="deleteCourseAction(${course.id}, '${escapeJsString(course.courseCode)}', this)">Delete</button>
-                </td>
-            </tr>
-        `).join('');
+        allCoursesData = await Api.getCourses();
+        renderFilteredCourses();
     } catch (err) {
-        tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: var(--danger);">${escapeHtml(err.message)}</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: var(--danger); padding: 1.5rem 0;">${escapeHtml(err.message)}</td></tr>`;
         showToast(err.message, 'error');
     }
+}
+
+function renderFilteredCourses() {
+    const tableBody = document.getElementById('coursesTableBody');
+    const paginationContainer = document.getElementById('coursesPagination');
+    if (!tableBody) return;
+
+    const query = courseSearchQuery.trim().toLowerCase();
+    const filtered = allCoursesData.filter(course => {
+        if (!query) return true;
+        const code = (course.courseCode || '').toLowerCase();
+        const name = (course.courseName || '').toLowerCase();
+        const faculty = (course.facultyName || '').toLowerCase();
+        const idStr = String(course.id || '');
+        return code.includes(query) || name.includes(query) || faculty.includes(query) || idStr.includes(query);
+    });
+
+    if (filtered.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: var(--text-muted); padding: 2rem 0;">
+            ${allCoursesData.length === 0 ? 'No courses found. Click "+ Add Course" to create one.' : 'No matching courses found.'}
+        </td></tr>`;
+        if (paginationContainer) paginationContainer.innerHTML = '';
+        return;
+    }
+
+    // Pagination math
+    const totalPages = Math.ceil(filtered.length / COURSES_PER_PAGE);
+    if (currentCoursePage > totalPages) currentCoursePage = totalPages;
+    if (currentCoursePage < 1) currentCoursePage = 1;
+
+    const startIndex = (currentCoursePage - 1) * COURSES_PER_PAGE;
+    const pageItems = filtered.slice(startIndex, startIndex + COURSES_PER_PAGE);
+
+    tableBody.innerHTML = pageItems.map(course => `
+        <tr>
+            <td>${escapeHtml(course.id)}</td>
+            <td><strong style="color: var(--navy); font-weight: 700;">${escapeHtml(course.courseCode)}</strong></td>
+            <td>${escapeHtml(course.courseName)}</td>
+            <td>${escapeHtml(course.facultyName)}</td>
+            <td style="text-align: right;">
+                <div style="display: flex; gap: 0.35rem; justify-content: flex-end;">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="openEditCourseModal(${course.id}, '${escapeJsString(course.courseCode)}', '${escapeJsString(course.courseName)}', '${escapeJsString(course.facultyName)}')" title="Edit Course">
+                        Edit
+                    </button>
+                    <button type="button" class="btn btn-danger btn-sm" onclick="deleteCourseAction(${course.id}, '${escapeJsString(course.courseCode)}', this)" title="Delete Course">
+                        Delete
+                    </button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+
+    // Render Pagination Controls
+    if (paginationContainer) {
+        if (totalPages <= 1) {
+            paginationContainer.innerHTML = '';
+        } else {
+            let paginationHtml = '';
+            paginationHtml += `<button type="button" class="btn btn-secondary btn-sm" ${currentCoursePage === 1 ? 'disabled' : ''} onclick="changeCoursePage(${currentCoursePage - 1})">&laquo;</button>`;
+            for (let p = 1; p <= totalPages; p++) {
+                paginationHtml += `<button type="button" class="btn ${p === currentCoursePage ? 'btn-primary' : 'btn-secondary'} btn-sm" onclick="changeCoursePage(${p})">${p}</button>`;
+            }
+            paginationHtml += `<button type="button" class="btn btn-secondary btn-sm" ${currentCoursePage === totalPages ? 'disabled' : ''} onclick="changeCoursePage(${currentCoursePage + 1})">&raquo;</button>`;
+            paginationContainer.innerHTML = paginationHtml;
+        }
+    }
+}
+
+function changeCoursePage(page) {
+    currentCoursePage = page;
+    renderFilteredCourses();
 }
 
 function escapeJsString(str) {
@@ -136,7 +196,7 @@ async function handleEditCourseSubmit(event) {
 }
 
 async function deleteCourseAction(id, code, btnElement) {
-    if (!confirm("Are you sure you want to delete this course?")) {
+    if (!confirm(`Are you sure you want to delete course "${code}"?`)) {
         return;
     }
 
@@ -177,5 +237,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const editForm = document.getElementById('editCourseForm');
     if (editForm) {
         editForm.addEventListener('submit', handleEditCourseSubmit);
+    }
+
+    const searchInput = document.getElementById('courseSearchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+            courseSearchQuery = e.target.value;
+            currentCoursePage = 1;
+            renderFilteredCourses();
+        });
     }
 });

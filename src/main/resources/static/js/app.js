@@ -19,6 +19,33 @@ function showToast(message, type = 'info') {
     }, 4000);
 }
 
+function escapeHtml(str) {
+    if (!str && str !== 0) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function renderStarRating(rating) {
+    const numRating = parseFloat(rating) || 0;
+    const rounded = Math.round(numRating * 2) / 2; // Round to nearest 0.5
+    let starsHtml = '<div class="star-rating">';
+    for (let i = 1; i <= 5; i++) {
+        if (numRating >= i) {
+            starsHtml += '<i class="fas fa-star filled">★</i>';
+        } else if (numRating >= i - 0.5) {
+            starsHtml += '<i class="fas fa-star filled" style="opacity:0.6;">★</i>';
+        } else {
+            starsHtml += '<i class="far fa-star">☆</i>';
+        }
+    }
+    starsHtml += '</div>';
+    return starsHtml;
+}
+
 function navigateTo(pageId) {
     const sections = document.querySelectorAll('.page-section');
     sections.forEach(sec => sec.classList.remove('active'));
@@ -28,8 +55,9 @@ function navigateTo(pageId) {
         targetSection.classList.add('active');
     }
 
-    const navLinks = document.querySelectorAll('.nav-link');
-    navLinks.forEach(link => {
+    // Sidebar Links
+    const sidebarLinks = document.querySelectorAll('.sidebar-nav-link');
+    sidebarLinks.forEach(link => {
         if (link.dataset.page === pageId) {
             link.classList.add('active');
         } else {
@@ -37,6 +65,17 @@ function navigateTo(pageId) {
         }
     });
 
+    // Top Header Links
+    const headerLinks = document.querySelectorAll('.header-top-link');
+    headerLinks.forEach(link => {
+        if (link.dataset.page === pageId) {
+            link.classList.add('active');
+        } else {
+            link.classList.remove('active');
+        }
+    });
+
+    // Page-specific initialization
     if (pageId === 'dashboardPage') {
         loadDashboard();
     } else if (pageId === 'coursesPage') {
@@ -54,21 +93,74 @@ function navigateTo(pageId) {
 
 async function loadDashboard() {
     try {
-        const courses = await Api.getCourses();
-        document.getElementById('statTotalCourses').textContent = courses.length;
+        // Fetch courses and forms in parallel
+        const [courses, forms] = await Promise.all([
+            Api.getCourses().catch(() => []),
+            Api.getFeedbackForms().catch(() => [])
+        ]);
 
-        const tableBody = document.getElementById('dashboardCoursesTable');
-        if (tableBody) {
-            if (courses.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center; color: var(--text-muted);">No courses created yet.</td></tr>';
+        const statTotalCourses = document.getElementById('statTotalCourses');
+        if (statTotalCourses) statTotalCourses.textContent = courses.length;
+
+        const todayStr = new Date().toISOString().split('T')[0];
+        let activeCount = 0;
+        let closedCount = 0;
+
+        forms.forEach(form => {
+            const isClosed = Boolean(form.closed);
+            const isPastDeadline = form.closingDate && form.closingDate < todayStr;
+            if (!isClosed && !isPastDeadline) {
+                activeCount++;
             } else {
-                tableBody.innerHTML = courses.slice(0, 5).map(c => `
-                    <tr>
-                        <td><strong>${escapeHtml(c.courseCode)}</strong></td>
-                        <td>${escapeHtml(c.courseName)}</td>
-                        <td>${escapeHtml(c.facultyName)}</td>
-                    </tr>
-                `).join('');
+                closedCount++;
+            }
+        });
+
+        const statActiveForms = document.getElementById('statActiveForms');
+        if (statActiveForms) statActiveForms.textContent = activeCount;
+
+        const statClosedForms = document.getElementById('statClosedForms');
+        if (statClosedForms) statClosedForms.textContent = closedCount;
+
+        // Fetch analytics for active forms to count total responses
+        let totalResponses = 0;
+        const analyticsPromises = forms.map(f => Api.getAnalytics(f.id).catch(() => null));
+        const analyticsList = await Promise.all(analyticsPromises);
+
+        analyticsList.forEach(a => {
+            if (a && typeof a.totalResponses === 'number') {
+                totalResponses += a.totalResponses;
+            }
+        });
+
+        const statTotalResponses = document.getElementById('statTotalResponses');
+        if (statTotalResponses) statTotalResponses.textContent = totalResponses;
+
+        // Populate Dashboard Active Forms Table
+        const tableBody = document.getElementById('dashboardActiveFormsTable');
+        if (tableBody) {
+            const activeFormsList = forms.filter(form => {
+                const isClosed = Boolean(form.closed);
+                const isPastDeadline = form.closingDate && form.closingDate < todayStr;
+                return !isClosed && !isPastDeadline;
+            });
+
+            if (activeFormsList.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color: var(--text-muted); padding: 1.5rem 0;">No active feedback forms currently open.</td></tr>';
+            } else {
+                tableBody.innerHTML = activeFormsList.slice(0, 5).map(form => {
+                    const courseCode = form.course ? form.course.courseCode : '';
+                    const courseName = form.course ? form.course.courseName : '';
+                    return `
+                        <tr>
+                            <td><strong>#${escapeHtml(form.id)}</strong></td>
+                            <td>${escapeHtml(courseCode)} - ${escapeHtml(courseName)}</td>
+                            <td>${escapeHtml(form.semester)}</td>
+                            <td>${escapeHtml(form.closingDate)}</td>
+                            <td><span class="badge badge-open">OPEN</span></td>
+                        </tr>
+                    `;
+                }).join('');
             }
         }
     } catch (err) {
@@ -76,18 +168,9 @@ async function loadDashboard() {
     }
 }
 
-function escapeHtml(str) {
-    if (!str) return '';
-    return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-}
-
 document.addEventListener('DOMContentLoaded', () => {
-    const navLinks = document.querySelectorAll('.nav-link');
+    // Navigation listeners for sidebar and top header
+    const navLinks = document.querySelectorAll('.sidebar-nav-link, .header-top-link');
     navLinks.forEach(link => {
         link.addEventListener('click', (e) => {
             e.preventDefault();
